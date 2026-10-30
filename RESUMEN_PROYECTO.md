@@ -203,92 +203,306 @@ El sistema implementa una arquitectura desacoplada y orientada a eventos para ga
 
 ---
 
-## 📁 8. Estructura del Código Fuente del Proyecto
+---
+
+## 🧩 8. Arquitectura Orientada a Objetos en PHP 8.5 (Clean Architecture y DDD)
+
+Para cumplir con los estándares académicos y de ingeniería de software exigidos en el perfil de grado, la totalidad de la lógica de dominio y las operaciones del negocio se implementan bajo el paradigma de **Programación Orientada a Objetos (POO)** en **PHP 8.5** siguiendo los principios de **Clean Architecture** (Arquitectura Limpia) y **Domain-Driven Design (DDD)** con autocarga estándar **PSR-4** (`namespace BecaComedor`).
+
+### 8.1 Los Cuatro Pilares de la POO Implementados
+1. **Encapsulamiento e Inmutabilidad:** Los datos críticos se protegen mediante modificadores de acceso `private` y `readonly`. Los *Value Objects* como [`CredencialQr`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Domain/ValueObjects/CredencialQr.php), [`FechaBolivia`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Domain/ValueObjects/FechaBolivia.php) y [`MetricasImpacto`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Domain/ValueObjects/MetricasImpacto.php) no permiten estados inválidos y realizan validaciones de invariantes en su constructor.
+2. **Abstracción:** Toda la lógica de negocio depende de contratos e interfaces puras ([`EstudianteRepositoryInterface`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Domain/Interfaces/EstudianteRepositoryInterface.php), [`AsistenciaRepositoryInterface`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Domain/Interfaces/AsistenciaRepositoryInterface.php), [`VotoRepositoryInterface`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Domain/Interfaces/VotoRepositoryInterface.php), etc.), aislando el dominio de bases de datos o servicios externos.
+3. **Polimorfismo:** Los repositorios pueden sustituirse dinámicamente en tiempo de ejecución (por ejemplo, [`InMemoryEstudianteRepository`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Infrastructure/Repositories/InMemoryEstudianteRepository.php) para pruebas unitarias de alta velocidad vs repositorios de base de datos relacional o REST) sin modificar una sola línea de los servicios de dominio.
+4. **Modularidad y Alta Cohesión:** Separación estricta en capas (Dominio, Infraestructura y Aplicación/HTTP), asegurando que cada clase posea una única responsabilidad bien definida (Principio SRP de SOLID).
+
+### 8.2 Diagrama de Clases UML (Arquitectura POO)
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% ENUMS Y VALUE OBJECTS
+    class ServicioAlimentario {
+        <<enumeration>>
+        +ALMUERZO: string = 'a'
+        +CENA: string = 'c'
+        +getNombreCompleto() string
+        +getHorario() string
+    }
+
+    class EstadoMenu {
+        <<enumeration>>
+        +BORRADOR: string = 'borrador'
+        +PUBLICADO: string = 'publicado'
+        +isModificable() bool
+    }
+
+    class EstadoAcceso {
+        <<enumeration>>
+        +AUTORIZADO: string = 'autorizado'
+        +BLOQUEADO: string = 'bloqueado'
+        +isPermitido() bool
+    }
+
+    class CredencialQr {
+        <<ValueObject, readonly>>
+        +PREFIJO: string = "BECA1:"
+        +string studentId
+        +desdePayload(string) CredencialQr$
+        +paraEstudiante(string) CredencialQr$
+        +getPayload() string
+        +equals(CredencialQr) bool
+    }
+
+    class FechaBolivia {
+        <<ValueObject, readonly>>
+        -DateTimeImmutable dateTime
+        +hoy() FechaBolivia$
+        +desdeString(string) FechaBolivia$
+        +toYmd() string
+        +getDiaSemanaEspanol() string
+        +esSabado() bool
+        +esDomingo() bool
+        +yaPasoHoraLimite(string) bool
+    }
+
+    class MetricasImpacto {
+        <<ValueObject, readonly>>
+        +int votosSi
+        +int racionesServidas
+        +int racionesExcedentes
+        +float kgRescatados
+        +float porcentajePrecision
+        +float kgEstimadosCocina
+        +calcular(int, int, float, float) MetricasImpacto$
+    }
+
+    %% ENTIDADES
+    class Estudiante {
+        <<Entity>>
+        -string id
+        -string nombre
+        -string ci
+        -string ru
+        -string carrera
+        -string telefono
+        -string foto
+        -bool activo
+        -int telegramUserId
+        +getId() string
+        +getNombre() string
+        +estaHabilitado() bool
+        +activar() void
+        +suspender() void
+        +obtenerCredencial() CredencialQr
+    }
+
+    class MenuDia {
+        <<Entity>>
+        -FechaBolivia fecha
+        -array platillosAlmuerzo
+        -array platillosCena
+        -bool feriado
+        -string horaLimite
+        -EstadoMenu estado
+        -bool cerrado
+        +publicar() void
+        +cerrarVotaciones() void
+        +tieneServicioCena() bool
+        +puedeVotar(FechaBolivia) bool
+    }
+
+    class RegistroAsistencia {
+        <<Entity>>
+        -string id
+        -string fechaYmd
+        -string studentId
+        -string timestamp
+        -string metodo
+        +registrar(string, string, string) RegistroAsistencia$
+        +getId() string
+    }
+
+    class RemanenteRacion {
+        <<Entity>>
+        -string id
+        -string fechaYmd
+        -ServicioAlimentario servicio
+        -int cantidad
+        -float kgRescatados
+        -string horaFin
+        -string liberadoEn
+        -bool activo
+        +liberar(string, ServicioAlimentario, int, float, string) RemanenteRacion$
+        +getCantidad() int
+        +getKgRescatados() float
+    }
+
+    %% SERVICIOS DE DOMINIO
+    class ValidadorAccesoService {
+        <<DomainService>>
+        -EstudianteRepositoryInterface estudianteRepo
+        -AsistenciaRepositoryInterface asistenciaRepo
+        +validar(string, FechaBolivia, string) ResultadoValidacionAcceso
+    }
+
+    class EstimadorRacionesService {
+        <<DomainService>>
+        -VotoRepositoryInterface votoRepo
+        -AsistenciaRepositoryInterface asistenciaRepo
+        +estimar(FechaBolivia, ServicioAlimentario, float, float) array
+    }
+
+    class RescateRemanentesService {
+        <<DomainService>>
+        -VotoRepositoryInterface votoRepo
+        -AsistenciaRepositoryInterface asistenciaRepo
+        -RemanenteRepositoryInterface remanenteRepo
+        -NotificadorTelegramInterface notificador
+        +liberarRemanentes(FechaBolivia, ServicioAlimentario, float, string, int) RemanenteRacion
+    }
+
+    class ReglasNegocioMenuService {
+        <<DomainService>>
+        +evaluarServiciosDisponibles(FechaBolivia, bool) array
+    }
+
+    %% CONTROLADORES HTTP
+    class AccesoController {
+        <<Controller>>
+        -ValidadorAccesoService validador
+        +validar(Request) Response
+    }
+
+    class EstimacionController {
+        <<Controller>>
+        -EstimadorRacionesService estimador
+        +obtener(Request) Response
+    }
+
+    class RemanentesController {
+        <<Controller>>
+        -RescateRemanentesService rescateService
+        +liberar(Request) Response
+    }
+
+    class MenuController {
+        <<Controller>>
+        -MenuRepositoryInterface menuRepo
+        -ReglasNegocioMenuService reglasService
+        +obtener(Request) Response
+        +guardar(Request) Response
+    }
+
+    %% RELACIONES
+    Estudiante ..> CredencialQr : genera
+    MenuDia --> FechaBolivia : fechado en
+    MenuDia --> EstadoMenu : estado
+    ValidadorAccesoService ..> Estudiante : valida padrón
+    ValidadorAccesoService ..> RegistroAsistencia : crea asistencia
+    ValidadorAccesoService ..> CredencialQr : decodifica
+    EstimadorRacionesService ..> MetricasImpacto : genera métricas ODS 12
+    RescateRemanentesService ..> RemanenteRacion : rescata y libera
+    AccesoController --> ValidadorAccesoService : invoca
+    EstimacionController --> EstimadorRacionesService : invoca
+    RemanentesController --> RescateRemanentesService : invoca
+    MenuController --> ReglasNegocioMenuService : evalúa reglas
+```
+
+### 8.3 Endpoints del Backend REST POO en PHP
+
+El backend expone una API REST moderna para interactuar con la lógica orientada a objetos:
+
+| Método | Endpoint | Controlador | Descripción Operativa |
+|---|---|---|---|
+| `POST` | `/api/validar-acceso` | [`AccesoController`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Http/Controllers/AccesoController.php) | Decodifica `BECA1:<id>`, valida padrón y aplica bloqueo atómico `ya_comio` en <50ms. |
+| `GET` | `/api/estimacion-cocina` | [`EstimacionController`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Http/Controllers/EstimacionController.php) | Calcula raciones requeridas con margen de seguridad (5%) e insumos en kg. |
+| `POST` | `/api/liberar-remanentes`| [`RemanentesController`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Http/Controllers/RemanentesController.php) | Rescata excedente ODS 12, calcula kg salvados y aplica cooldown anti-spam de 10 min. |
+| `GET` | `/api/menu` | [`MenuController`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Http/Controllers/MenuController.php) | Retorna la minuta del día evaluando reglas de sábado (llevar), domingo y feriados. |
+| `POST` | `/api/menu` | [`MenuController`](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php/src/Http/Controllers/MenuController.php) | Guarda y publica la minuta alimentaria con validación de platillos. |
+| `GET` | `/api/health` | Front Controller | Verificación de estado del servidor y metadatos de arquitectura POO. |
+
+---
+
+## 📁 9. Estructura del Código Fuente del Proyecto
 
 ```text
 /
+├── backend-php/                       # BACKEND ORIENTADO A OBJETOS (PHP 8.5 + PSR-4 + Clean Architecture)
+│   ├── composer.json                  # Definición de paquete PSR-4 (BecaComedor\\ -> src/) y dependencias
+│   ├── phpunit.xml                    # Configuración de suite de pruebas unitarias PHPUnit
+│   ├── public/
+│   │   └── index.php                  # Front Controller / Enrutador central REST con inyección de dependencias
+│   ├── src/
+│   │   ├── Domain/                    # NÚCLEO DE DOMINIO INDEPENDIENTE
+│   │   │   ├── Enums/                 # Enumeraciones estrictas (ServicioAlimentario, EstadoMenu, RolUsuario, etc.)
+│   │   │   ├── ValueObjects/          # CredencialQr, FechaBolivia (UTC-4) y MetricasImpacto (ODS 12)
+│   │   │   ├── Entities/              # Estudiante, MenuDia, Voto, RegistroAsistencia, RemanenteRacion
+│   │   │   ├── Interfaces/            # Contratos de repositorio y notificadores desacoplados
+│   │   │   └── Services/              # ValidadorAccesoService, EstimadorRacionesService, RescateRemanentesService
+│   │   ├── Infrastructure/            # IMPLEMENTACIÓN DE PERSISTENCIA Y COMUNICACIÓN EXTERNA
+│   │   │   ├── Repositories/          # InMemoryEstudianteRepository, InMemoryAsistencia, InMemoryMenu, etc.
+│   │   │   └── Telegram/              # MockTelegramNotificationService para emisión de alertas
+│   │   └── Http/                      # CAPA DE ENTRADA Y CONTROLADORES REST
+│   │       ├── Request.php            # Abstracción orientada a objetos de peticiones HTTP
+│   │       ├── Response.php           # Abstracción orientada a objetos de respuestas JSON con CORS
+│   │       └── Controllers/           # AccesoController, EstimacionController, RemanentesController, MenuController
+│   └── tests/                         # PRUEBAS AUTOMATIZADAS EN PHPUNIT
+│       ├── Unit/                      # Pruebas unitarias de Value Objects y Servicios de Dominio
+│       │   ├── CredencialQrTest.php
+│       │   ├── ReglasNegocioMenuTest.php
+│       │   ├── EstimadorRacionesTest.php
+│       │   ├── ValidadorAccesoTest.php
+│       │   └── RescateRemanentesTest.php
+│       └── Integration/               # Pruebas de integración HTTP y controladores
+│           └── ApiRouterTest.php
 ├── dist/                              # Distribución optimizada para producción (Firebase Hosting)
-├── src/                               # Código fuente modular de la aplicación React
-│   ├── admin/                         # Vistas del perfil Administrador
-│   │   ├── AdminDashboard.jsx         # Contenedor principal con navegación por pestañas
-│   │   ├── CarnetTab.jsx              # Emisión, diseño e impresión masiva de carnets QR
-│   │   ├── MenuTab.jsx                # Planificador de menú matricial y envíos diferidos
-│   │   ├── MetricsTab.jsx             # Panel de indicadores históricos ODS 12 y exportación
-│   │   └── StudentsTab.jsx            # Gestión de padrón de becarios y expedientes
-│   ├── cocina/                        # Vistas del perfil Cocina
-│   │   ├── KitchenApp.jsx             # Contenedor del personal de cocina
-│   │   ├── ScannerScreen.jsx          # Escáner de mesón con feedback verde/rojo y sonido
-│   │   └── ForecastView.jsx           # Tablero de estimación de raciones y remanentes ODS 12
-│   ├── recepcion/                     # Vistas del perfil Recepción
-│   │   └── ReceptionistApp.jsx        # Escáner continuo de entrada con toggle de cámaras
-│   ├── auth/                          # Módulos de autenticación
-│   │   └── AuthModal.jsx              # Modal de inicio de sesión con email y contraseña
-│   ├── components/                    # Componentes reutilizables
-│   │   └── SyncStatusBadge.jsx        # Indicador visual del estado de sincronización offline
-│   ├── hooks/                         # CAPA DE CONTROL Y DOMINIO (Lógica modular)
-│   │   ├── useForecast.js             # Lógica de raciones, cálculo ODS 12 y cooldown
-│   │   ├── useScanner.js              # Hardware de cámara, Web Audio beeps y modo offline
-│   │   ├── useMenuCalendar.js         # Cálculos de matriz de calendario y borradores de menú
-│   │   └── useMetricsHistory.js       # Agregación histórica de 10 días y kilos salvados
-│   ├── services/                      # CAPA DE INFRAESTRUCTURA Y COMUNICACIÓN
-│   │   ├── firebase.js                # Inicialización de Firebase App y Auth
-│   │   ├── firestoreRest.js           # Cliente REST nativo para Firestore (BD default)
-│   │   ├── firestoreService.js        # Fachada de consultas parametrizadas con polling
-│   │   ├── workerClient.js            # Cliente HTTP para endpoints de Cloudflare Worker
-│   │   ├── authService.js             # Observadores de sesión y roles de usuario (RBAC)
-│   │   ├── offlineSyncService.js      # Motor offline-first con localStorage y cola
-│   │   └── audio.js                   # Sintetizador de beeps con Web Audio API
-│   ├── utils/                         # Utilidades puras y funciones matemáticas
-│   │   ├── dates.js                   # Manejo estricto de zona horaria Bolivia (UTC-4)
-│   │   ├── menuRules.js               # Reglas de negocio de almuerzo, cena y feriados
-│   │   ├── metrics.js                 # Fórmulas de precisión y balance de comensales
-│   │   ├── remanentes.js              # Fórmulas de impacto ODS 12 y kilos rescatados
-│   │   ├── qr.js                      # Generación y validación del payload 'BECA1:<id>'
-│   │   ├── image.js                   # Compresión de fotografías para credencial
-│   │   └── camera.js                  # Detección y alternancia de cámaras frontal/trasera
-│   └── __tests__/                     # SUITE DE PRUEBAS AUTOMATIZADAS (Vitest)
-│       ├── camera.test.js             # Pruebas de selección de hardware de video
-│       ├── cierre.test.js             # Pruebas de cierre de votaciones en hora límite
-│       ├── dates.test.js              # Pruebas de desfase y cálculos de fecha UTC-4
-│       ├── envios.test.js             # Pruebas de cola de envíos diferidos
-│       ├── hooks.test.js              # Pruebas de hooks modulares (useForecast, useMenu)
-│       ├── metrics.test.js            # Pruebas de fórmulas de rendimiento del comedor
-│       ├── offlineSync.test.js        # Pruebas de persistencia y cola sin conexión
-│       ├── publicarMenu.test.js       # Pruebas de formateo de mensajes a Telegram
-│       ├── qr.test.js                 # Pruebas de codificación/decodificación de QR
-│       ├── remanentes.test.js         # Pruebas de fórmulas de excedentes ODS 12
-│       ├── votos.test.js              # Pruebas de registro de respuestas afirmativas/negativas
-│       └── worker.test.js             # Pruebas de endpoints perimetrales del Worker
-├── worker/                            # BACKEND SERVERLESS (Cloudflare Worker)
-│   ├── index.js                       # Enrutador principal de peticiones y webhooks
-│   ├── core.js                        # Firma criptográfica JWT RS256 con Web Crypto API
-│   ├── estudiantes.js                 # Comandos y respuestas del bot de estudiantes
-│   ├── cocina.js                      # Envío de alertas de demanda al grupo de cocina
-│   ├── meson.js                       # Endpoint /validate para escaneo de credenciales
-│   ├── remanentes.js                  # Endpoint /liberar-remanentes (ODS 12)
-│   └── envios.js                      # Procesamiento de mensajes programados vía crons
-├── scripts/                           # SCRIPTS DE ADMINISTRACIÓN Y CONFIGURACIÓN
-│   ├── integration-rest.test.js       # Prueba de integración real REST + Auth
-│   ├── seed-admin.mjs                 # Creación de usuarios con roles admin/cocina/recepcion
-│   ├── seed-menu.mjs                  # Poblado de minutas de prueba en la base de datos
-│   ├── check-db.mjs                   # Verificación de integridad de colecciones Firestore
-│   ├── set-webhook.mjs                # Configuración y rotación de webhooks con Telegram
-│   └── deploy-rules-user.mjs          # Despliegue de firestore.rules hacia cloud.firestore/default
-├── firestore.rules                    # Reglas de seguridad basadas en roles (RBAC)
-├── wrangler.toml                      # Configuración de variables, secretos y crons del Worker
-├── firebase.json                      # Configuración de hosting y rewrites para SPA
-├── vite.config.js                     # Empaquetado optimizado con manualChunks (vendor/scanner)
-├── ACTIVIDADES_Y_OBJETIVOS_PROYECTO.xlsx # Excel oficial con matriz WBS, entrevistas y cronograma
-├── PERFIL DE PROYECTO DE GRADO.docx   # Documento oficial del Perfil de Grado actualizado
-└── GUIA_EXPLICACION_DOCENTE.md        # Libreto estratégico de defensa ante tribunal docente
+├── src/                               # Código fuente modular de la aplicación React 19
+│   ├── admin/                         # Vistas del perfil Administrador (StudentsTab, CarnetTab, MenuTab, MetricsTab)
+│   ├── cocina/                        # Vistas de Cocina (KitchenApp, ScannerScreen, ForecastView)
+│   ├── recepcion/                     # Vistas de Recepción (ReceptionistApp con lectura continua)
+│   ├── auth/                          # Componentes de autenticación (AuthModal)
+│   ├── components/                    # Componentes compartidos (SyncStatusBadge)
+│   ├── hooks/                         # CAPA DE CONTROL EN CLIENTE (useForecast, useScanner, useMenu, useMetrics)
+│   ├── services/                      # Servicios de comunicación (firestoreRest, phpApiClient, offlineSyncService)
+│   ├── utils/                         # Utilidades puras (dates, menuRules, metrics, remanentes, qr, camera)
+│   └── __tests__/                     # Suite Vitest (13 archivos, 98 pruebas)
+├── worker/                            # Microservicio perimetral en Cloudflare Workers (Telegram bot + Crons)
+├── scripts/                           # Utilidades Node de seed, reglas y diagnóstico
+├── firestore.rules                    # Reglas de seguridad RBAC de Firestore (BD default)
+├── wrangler.toml                      # Configuración de Cloudflare Workers (vars, secretos y crons)
+├── vite.config.js                     # Configuración de empaquetado Vite con manualChunks
+├── ACTIVIDADES_Y_OBJETIVOS_PROYECTO.xlsx # Excel con WBS de 24 actividades, entrevistas y cronograma
+├── PERFIL DE PROYECTO DE GRADO.docx   # Documento oficial del perfil actualizado con POO en PHP
+└── GUIA_EXPLICACION_DOCENTE.md        # Guía de sustentación y libreto estratégico para el docente
 ```
 
 ---
 
-## 🧪 9. Suite de Pruebas Automatizadas y Aseguramiento de Calidad
+## 🧪 10. Suites de Pruebas Automatizadas y Aseguramiento de Calidad
 
-El proyecto cuenta con una cobertura integral de pruebas automatizadas mediante el framework **Vitest**. La suite consta de **13 archivos de prueba** y **98 pruebas unitarias y de integración**, ejecutadas exitosamente con **100% de aprobación**:
+El proyecto posee una doble suite de pruebas automatizadas que valida tanto el backend orientado a objetos en PHP como el cliente web modular en React:
 
+### 10.1 Suite Backend en PHP (PHPUnit 11)
+Prueba la integridad de los *Value Objects*, reglas de negocio, cálculo de excedentes ODS 12, prevención de fraude `ya_comio`, cooldown anti-spam y controladores REST:
+```text
+Runtime:       PHP 8.5.9
+Configuration: backend-php/phpunit.xml
+
+....................                                              20 / 20 (100%)
+
+Time: 00:00.032, Memory: 4.00 MB
+OK (20 tests, 60 assertions)
+```
+*Comando de ejecución:*
+```bash
+cd backend-php && vendor/bin/phpunit
+# o vía composer:
+composer test
+```
+
+### 10.2 Suite Frontend en React (Vitest)
+Prueba el motor de sincronización offline-first, renderizado de carnets QR, decodificación, timers y hooks reactivos:
 ```text
  ✓ src/__tests__/camera.test.js (8 tests)
  ✓ src/__tests__/dates.test.js (5 tests)
@@ -307,17 +521,24 @@ El proyecto cuenta con una cobertura integral de pruebas automatizadas mediante 
  Test Files  13 passed (13)
       Tests  98 passed (98) - 100% éxito
 ```
-
-Para ejecutar la suite de pruebas localmente:
+*Comando de ejecución:*
 ```bash
 npm test
 ```
 
 ---
 
-## 🚀 10. Guía de Despliegue y Enlaces de Producción
+## 🚀 11. Guía de Ejecución y Despliegue
 
-### 10.1 Comandos de Despliegue
+### 11.1 Servidor Local de Desarrollo PHP (POO)
+Para levantar el servidor backend orientado a objetos en desarrollo local:
+```bash
+cd backend-php
+php -S 0.0.0.0:8000 -t public
+# La API REST quedará disponible en http://localhost:8000/api/health
+```
+
+### 11.2 Despliegue del Sistema Web
 ```bash
 # 1. Compilación del bundle optimizado para producción
 npm run build
@@ -325,7 +546,7 @@ npm run build
 # 2. Despliegue del frontend en Firebase Hosting
 firebase deploy --only hosting
 
-# 3. Despliegue del backend perimetral en Cloudflare Workers
+# 3. Despliegue del microservicio perimetral en Cloudflare Workers
 npx wrangler deploy
 
 # 4. Despliegue de reglas de seguridad en Firestore (BD default)
@@ -335,7 +556,7 @@ node scripts/deploy-rules-user.mjs
 node scripts/set-webhook.mjs
 ```
 
-### 10.2 Enlaces del Sistema en Producción
+### 11.3 Enlaces del Sistema en Producción
 * **Portal Principal y Panel Administrativo:** [https://beca-comedor-uabjb.web.app](https://beca-comedor-uabjb.web.app)
 * **Punto de Control Mesón (Cocina):** [https://beca-comedor-uabjb.web.app/#/meson](https://beca-comedor-uabjb.web.app/#/meson)
 * **Punto de Control Recepción (Portería):** [https://beca-comedor-uabjb.web.app/#/recepcion](https://beca-comedor-uabjb.web.app/#/recepcion)
@@ -344,14 +565,17 @@ node scripts/set-webhook.mjs
 
 ---
 
-## 📚 11. Catálogo de Documentación y Recursos Vinculados
+## 📚 12. Catálogo de Documentación y Recursos Vinculados
 
-1. **Matriz de Actividades y Guía de Entrevistas en Excel:** [ACTIVIDADES_Y_OBJETIVOS_PROYECTO.xlsx](file:///home/humberto/Proyectos/BECA_COMEDOR/ACTIVIDADES_Y_OBJETIVOS_PROYECTO.xlsx)
+1. **Backend POO en PHP:** [backend-php/](file:///home/humberto/Proyectos/BECA_COMEDOR/backend-php)
+   * Entidades, Value Objects inmutables, Interfaces de repositorio, Servicios de Dominio, Controladores HTTP y Suite PHPUnit.
+2. **Matriz de Actividades y Guía de Entrevistas en Excel:** [ACTIVIDADES_Y_OBJETIVOS_PROYECTO.xlsx](file:///home/humberto/Proyectos/BECA_COMEDOR/ACTIVIDADES_Y_OBJETIVOS_PROYECTO.xlsx)
    * *Hoja 1:* Matriz WBS de 24 actividades (ACT-1.1 a ACT-6.5) articuladas a OE-1..OE-6.
-   * *Hoja 2:* Guía de Entrevistas a profundidad (10 preguntas cualitativas).
+   * *Hoja 2:* Guía de Entrevistas a profundidad (10 preguntas cualitativas a Bienestar, Cocina y Mesón).
    * *Hoja 3:* Ficha de Observación en Mesón (Línea Base vs Meta) y Encuesta a Becarios (6 preguntas).
    * *Hoja 4:* Cronograma de Sprints Scrum (Sprints 0 a 5, 12 semanas).
-2. **Perfil de Proyecto de Grado Formato Word:** [PERFIL DE PROYECTO DE GRADO.docx](file:///home/humberto/Proyectos/BECA_COMEDOR/PERFIL%20DE%20PROYECTO%20DE%20GRADO.docx)
-   * Documento académico completo con título, objetivos, actividades insertadas bajo cada objetivo específico, justificación social/económica/técnica, marco teórico, metodología Scrum con WBS y bibliografía APA.
-3. **Guía de Defensa ante el Tribunal Docente:** [GUIA_EXPLICACION_DOCENTE.md](file:///home/humberto/Proyectos/BECA_COMEDOR/GUIA_EXPLICACION_DOCENTE.md)
-   * Libreto argumentativo con respuestas estratégicas sobre arquitectura en 3 capas, justificación del por qué de los Custom Hooks, solución al error de Firestore `default`, resiliencia offline y métricas ODS 12.
+3. **Perfil de Proyecto de Grado Formato Word:** [PERFIL DE PROYECTO DE GRADO.docx](file:///home/humberto/Proyectos/BECA_COMEDOR/PERFIL%20DE%20PROYECTO%20DE%20GRADO.docx)
+   * Documento académico oficial con justificación, marco teórico (incorporando POO con PHP 8.5), matriz de actividades bajo cada objetivo específico y bibliografía en norma APA.
+4. **Guía de Defensa ante el Tribunal Docente:** [GUIA_EXPLICACION_DOCENTE.md](file:///home/humberto/Proyectos/BECA_COMEDOR/GUIA_EXPLICACION_DOCENTE.md)
+   * Libreto argumentativo con respuestas preparadas sobre la arquitectura por capas, POO en PHP, mitigación de errores de Firestore y rescate de comida ODS 12.
+

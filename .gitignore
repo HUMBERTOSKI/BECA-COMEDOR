@@ -11,3 +11,7 @@ firebase-service-account.json
 !.env.example
 .DS_Store
 .resume/
+vendor/
+backend-php/vendor/
+.phpunit.result.cache
+backend-php/.phpunit.result.cache
