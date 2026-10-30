@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function getRole(uid) {
+      return get(/databases/$(database)/documents/admins/$(uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuth()
+        && getRole(request.auth.uid).habilitado == true
+        && getRole(request.auth.uid).rol == 'admin';
+    }
+
+    function isStaff() {
+      return isAuth()
+        && getRole(request.auth.uid).habilitado == true
+        && (getRole(request.auth.uid).rol == 'admin' || getRole(request.auth.uid).rol == 'cocina'
+            || getRole(request.auth.uid).rol == 'recepcionista');
+    }
+
+    match /admins/{uid} {
+      // El personal (habilitado) lee su propio rol al iniciar; la escritura es del admin.
+      allow read: if isAuth() && getRole(request.auth.uid).habilitado == true;
+      allow write: if isAdmin();
+    }
+
+    match /students/{id} {
+      allow read: if isStaff();
+      // Las altas/ediciones de estudiantes (incluido el vínculo de Telegram) son del admin.
+      allow write: if isAdmin();
+    }
+
+    match /menus/{fecha} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    match /envios/{id} {
+      // Envíos programados del menú (creación/cancelación del panel).
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    match /votes/{docId} {
+      // Solo lectura por el personal. La escritura ocurre EXCLUSIVAMENTE vía el
+      // Cloudflare Worker (cuenta de servicio, no sujeta a reglas).
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
+    match /attendance/{docId} {
+      // Solo lectura por el personal. La escritura (con bloqueo anti-duplicidad)
+      // ocurre EXCLUSIVAMENTE vía el Cloudflare Worker.
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
+    match /remanentes/{docId} {
+      // Liberación de raciones remanentes (ODS 12). Solo el Cloudflare Worker
+      // (/liberar-remanentes) escribe con la cuenta de servicio.
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
+    match /config/{key} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+  }
+}

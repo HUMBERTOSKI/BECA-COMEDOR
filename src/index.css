@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+html, body {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  background: #f5f5f4;
+}
+
+/* ---------- Impresión de carnets ---------- */
+@media print {
+  body * { visibility: hidden !important; }
+  #print-area, #print-area * { visibility: visible !important; }
+  #print-area {
+    position: absolute !important;
+    left: 0; top: 0;
+    width: 100%;
+  }
+  .no-print { display: none !important; }
+  @page { size: A4 landscape; margin: 0; }
+}
+
+.card-carnet {
+  width: 85.6mm;
+  height: 54mm;
+  position: relative;
+  overflow: hidden;
+  border-radius: 2mm;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.print-sheet {
+  display: grid;
+  grid-template-columns: repeat(2, 85.6mm);
+  gap: 2mm;
+  justify-content: center;
+  padding: 5mm;
+}
+
+.scan-line {
+  transition: opacity 0.2s;
+}

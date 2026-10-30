@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.firebase/
+.wrangler/
+firebase-service-account.json
+.webhook-secret*
+.bot-token*
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+.resume/
