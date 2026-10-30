@@ -1,17 +1,18 @@
-// Cliente HTTP hacia el Cloudflare Worker (Telegram + validación de despacho).
+// Cliente HTTP hacia el Backend REST en PHP (Programación Orientada a Objetos).
+// Se conecta a la API POO de producción para validación en mesón, Telegram y remanentes.
 
-const WORKER_URL = import.meta.env.VITE_WORKER_URL || ''
+const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_WORKER_URL || 'http://localhost:8000'
 
 async function post(path, body) {
-  if (!WORKER_URL) throw new Error('VITE_WORKER_URL no configurado')
-  const res = await fetch(`${WORKER_URL}${path}`, {
+  if (!API_BASE_URL) throw new Error('VITE_API_URL no configurado')
+  const res = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    throw new Error(`Worker ${res.status}: ${text}`)
+    throw new Error(`API POO ${res.status}: ${text}`)
   }
   return res.json()
 }
@@ -25,13 +26,13 @@ export function validateScan(code) {
   return post('/validate', { code })
 }
 
-/** Pide al worker publicar el menú de HOY en Telegram (manual, inmediato). */
+/** Pide al backend publicar el menú de HOY en Telegram (manual, inmediato). */
 export function publicarMenuHoy() {
   return post('/publicarmenu', {})
 }
 
 /**
- * Pide al worker publicar el menú de un día concreto en Telegram (inmediato).
+ * Pide al backend publicar el menú de un día concreto en Telegram (inmediato).
  * `servicio`: 'almuerzo' | 'cena' | 'ambos'.
  */
 export function publicarMenuPara(fecha, servicio = 'ambos') {
